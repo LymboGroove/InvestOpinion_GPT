@@ -1,0 +1,10 @@
+# .env configuration file
+/.env
+
+# folders
+/bin
+/.vscode
+/include
+/lib
+/share
+pyvenv.cfg
