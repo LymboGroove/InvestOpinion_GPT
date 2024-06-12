@@ -1,0 +1,100 @@
+import feedparser, socket, os, requests, re
+from openai import OpenAI
+from datetime import datetime
+from bs4 import BeautifulSoup
+
+client = OpenAI()
+
+def extract_chinese_text_from_urls(url_list):
+   # Ensure the input is a list
+    if not isinstance(url_list, list):
+        raise TypeError("Expected a list of URLs, got '{}'".format(type(url_list).__name__))
+    # List to store the Chinese text paragraphs from all RSS items
+    all_chinese_paragraphs = []
+    # Function to check if a text contains Chinese characters
+    def contains_chinese(text):
+        for ch in text:
+            if '\u4e00' <= ch <= '\u9fff':
+                return True
+        return False
+    # Function to clean the text
+    def clean_text(text):
+        # Remove unwanted characters like \n and \u3000
+        text = text.replace('\n', '').replace('\u3000', '').strip()
+        # Remove HTML tags
+        text = re.sub(r'<[^>]+>', '', text)
+        return text
+    # Iterate through each URL in the list
+    for url in url_list:
+        try:
+            # Fetch the content from the URL
+            response = requests.get(url)
+            response.raise_for_status()  # Raise an error for bad status
+            rss_content = response.text
+            # Parse the content using BeautifulSoup
+            soup = BeautifulSoup(rss_content, 'html.parser')
+            # Extract all text elements
+            texts = soup.find_all(text=True)
+            # List to store the Chinese text paragraphs for the current RSS item
+            total_chars = 0
+            chinese_paragraphs = []
+            # Iterate through the text elements and extract Chinese text
+            for text in texts:
+                if contains_chinese(text):
+                    clean_paragraph = clean_text(text)
+                    if clean_paragraph:  # Add only if the cleaned text is not empty
+                        if total_chars + len(clean_paragraph) > 3000:
+                            break
+                        chinese_paragraphs.append(clean_paragraph)
+                        total_chars += len(clean_paragraph)
+            # Add the extracted Chinese paragraphs to the main list
+            all_chinese_paragraphs.append(chinese_paragraphs)
+        except requests.RequestException as e:
+            print(f"Failed to fetch {url}: {e}")
+    return all_chinese_paragraphs
+            
+def summarize_news(feed_urls):
+    summary = []
+    news_list = extract_chinese_text_from_urls(feed_urls)
+    completion = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "You are a smart and delighted analyst, good at chinese market analysis and economic forecast. You'll need to consider budgeting, investment strategies and risk management when creating a brief report for your client. In some cases, you may also need to provide advice on taxation laws and regulations in order to help them maximize their profits"},
+            {"role": "assistant", "content":str(news_list)},
+            {"role": "user", "content": "Based on the list of news on the economy and influence of global environment, describe and explain the potential direction of investment on the market."},
+            {"role": "user", "content": "The response should include at least 2 parts for each sector: 1. The analysis of news in each sector, and 2. Recommendation/insight of the investment of each sector. Be creative, there are no limits on the number of sectors you could analyze, nor the length of your response. After you are done analyzing all the sectors, leave a brief paragraph on the whole market's insight and investment potentials."},
+            {"role": "user", "content": "An example of the format would be like:'### Healthcare Sector /n /n #### Analysis: /n - **Alzheimer’s Takes a Financial Toll Long Before Diagnosis, Study Finds**: Highlights the importance and potential growth in healthcare solutions for chronic conditions. /n - **U.A.W. Reaches Accord on Pay and Safety at E.V. Battery Plant**: A healthier working environment for battery plants may reduce long-term healthcare liabilities, indirectly benefiting the healthcare sector. /n /n #### Recommendation: /n Invest in healthcare stocks, particularly those focusing on chronic conditions and innovative treatments. Pharmaceutical companies with a strong R&D pipeline and healthcare tech firms offer long-term growth potential.'"},
+            {"role": "user", "content": "Do not include phrases like 'certainly' or 'absolutely'. Do not include any error messages like 'as an AI model...'. Start directly with the tips and make sure the response is detailed and straightforward. Your response should be in zh-CN, or simplified chinese."}
+        ]
+    )
+    summary = completion.choices[0].message
+    return summary.content
+
+def save_summaries_to_markdown(summaries):
+    # Ensure the export directory exists
+    export_dir = "export"
+    if not os.path.exists("export"):
+        export_dir = os.makedirs("export")
+    # Get current date
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    filename = f"{export_dir}/GPT_InvestOpinions_zh_CN_{current_date}.md"
+    with open(filename, "w") as file:
+        file.write(f"# 以下是由 OpenAI GPT-4o 模型于{current_date}生成的股市投资意见。\n \n")
+        file.write(f"{summaries}")
+        file.write(f"\n\n 以下内容仅供参考，不应被视为法律、税务、投资、财务或其他专业建议。我们网站上的任何内容均不构成作者、OpenAI 或任何第三方服务提供商在任何法律禁止此类行为的司法管辖区内买卖任何证券或金融工具的招揽、推荐、认可或提议。网站上的所有内容均为一般信息，并不针对任何个人或实体的具体情况。网站上的任何内容均不构成专业或财务建议，也不提供所讨论主题或相关法律的全面或完整陈述。通过使用或访问网站或内容，作者和 OpenAI 并不以信托责任的身份行事。您需要自行评估使用网站上任何信息或内容的优点和风险，并在此基础上做出决策。使用本网站即表示您同意不因根据网站上提供的信息或内容所做出的决策而追究作者、OpenAI 及其附属机构或任何第三方服务提供商的责任。")
+    return filename
+
+RSS_FEED_URLS = [
+    'https://rsshub.app/stcn/yw',
+    'https://rsshub.app/mckinsey/cn',
+    'https://rsshub.app/mckinsey/cn/18',
+    'https://rsshub.app/theblockbeats/newsflash',
+    'https://rsshub.app/jin10',
+    'https://rsshub.app/gelonghui/home',
+    'https://rsshub.app/fastbull/news',
+    'https://rsshub.app/eastmoney/report/strategyreport',
+    'https://rsshub.app/baidu/gushitong/index',
+    'https://rsshub.app/sse/renewal'
+]
+# print(extract_chinese_text_from_urls(RSS_FEED_URLS))
+save_summaries_to_markdown(summarize_news(RSS_FEED_URLS))
