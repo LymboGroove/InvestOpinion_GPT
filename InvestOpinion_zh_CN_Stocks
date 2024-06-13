@@ -43,7 +43,7 @@ def extract_chinese_text_from_urls(url_list):
                 if contains_chinese(text):
                     clean_paragraph = clean_text(text)
                     if clean_paragraph:  # Add only if the cleaned text is not empty
-                        if total_chars + len(clean_paragraph) > 3000:
+                        if total_chars + len(clean_paragraph) > 5000:
                             break
                         chinese_paragraphs.append(clean_paragraph)
                         total_chars += len(clean_paragraph)
@@ -96,5 +96,5 @@ RSS_FEED_URLS = [
     'https://rsshub.app/baidu/gushitong/index',
     'https://rsshub.app/sse/renewal'
 ]
-# print(extract_chinese_text_from_urls(RSS_FEED_URLS))
+
 save_summaries_to_markdown(summarize_news(RSS_FEED_URLS))
